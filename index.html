@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Banco de Sensores</title>
+<style>
+/* Instrumento de taller: una columna, paneles numerados por prueba real, cifras en mono */
+:root{
+  --bg:#1c1e1d; --panel:#252826; --line:#373b38; --fg:#e8e7e0; --muted:#9b9e97;
+  --accent:#e6c34a; --good:#8fbf5a; --warn:#e5a23c; --bad:#d8664c;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono","Roboto Mono",Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--sans)}
+main{max-width:640px;margin:0 auto;display:grid;gap:14px;
+  padding-block:max(16px,env(safe-area-inset-top,0px)) max(32px,env(safe-area-inset-bottom,0px));
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header h1{margin:0;font-size:1.45rem;letter-spacing:.01em;text-wrap:balance}
+header p{margin:.2rem 0 0;color:var(--muted);font-size:.9rem}
+section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;display:grid;gap:10px;min-width:0}
+h2{margin:0;font-size:1.02rem;display:flex;gap:.5rem;align-items:baseline}
+h2 .n{font-family:var(--mono);color:var(--accent);font-size:.85rem}
+.hint{margin:0;color:var(--muted);font-size:.9rem}
+.hint b{color:var(--fg);font-weight:600}
+ol.steps{margin:0;padding-left:1.2rem;color:var(--muted);font-size:.9rem;display:grid;gap:4px}
+ol.steps b{color:var(--fg)}
+.row{display:flex;flex-wrap:wrap;gap:8px}
+button{font:600 .92rem var(--sans);border-radius:8px;border:1px solid var(--line);background:#2f3330;color:var(--fg);padding:.6rem .85rem;cursor:pointer}
+button.primary{background:var(--accent);color:#1c1e1d;border-color:var(--accent)}
+button:disabled{opacity:.4;cursor:not-allowed}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.cell{border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+.cell .k{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.cell .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:1.15rem}
+.cell .v small{font-size:.75rem;color:var(--muted)}
+.status{font-family:var(--mono);font-size:.85rem;color:var(--muted);min-height:1.3em}
+.status.live{color:var(--accent)}
+.res{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:.88rem;display:grid;gap:3px}
+.res div{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dashed var(--line);padding-bottom:3px}
+.chip{display:inline-block;font:700 .72rem var(--sans);letter-spacing:.05em;text-transform:uppercase;padding:.15rem .45rem;border-radius:999px;border:1px solid currentColor}
+.good{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad)}.mut{color:var(--muted)}
+.verdict{display:grid;gap:8px}
+.verdict .line{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+textarea{width:100%;min-height:150px;background:#1a1c1b;color:var(--fg);border:1px solid var(--line);border-radius:8px;font:.78rem/1.45 var(--mono);padding:8px}
+footer{color:var(--muted);font-size:.8rem}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Banco de Sensores</h1>
+    <p>Mecánica de Galpón · ¿sirve este móvil para medir alineación?</p>
+  </header>
+
+  <section>
+    <h2><span class="n">00</span>Activar</h2>
+    <p class="hint">Quita la funda. Pulsa una vez; la pantalla se mantendrá encendida mientras pruebas.</p>
+    <div class="row"><button id="btnStart" class="primary">Activar sensores</button></div>
+    <div class="status" id="startStatus">Sensores apagados.</div>
+    <div class="grid">
+      <div class="cell"><div class="k">Postura</div><div class="v" id="lvPose">—</div></div>
+      <div class="cell"><div class="k">Inclinación en plano</div><div class="v" id="lvTilt">—</div></div>
+      <div class="cell"><div class="k">Giro acumulado</div><div class="v" id="lvYaw">—</div></div>
+      <div class="cell"><div class="k">Giróscopo</div><div class="v" id="lvGHz">—</div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">01</span>Deriva del giroscopio</h2>
+    <p class="hint">Cuánto "se inventa" el móvil girando cuando está quieto. Es lo que arruina la convergencia al llevarlo de una rueda a otra.</p>
+    <ol class="steps">
+      <li>Móvil <b>plano, pantalla arriba</b>, sobre una mesa firme.</li>
+      <li>Pulsa y <b>no toques nada ni la mesa durante 40 s</b>. Los 10 primeros calibran, los 30 siguientes miden.</li>
+    </ol>
+    <div class="row"><button id="btnDrift" disabled>Empezar (40 s)</button></div>
+    <div class="status" id="driftStatus"></div>
+    <div class="res" id="driftRes"></div>
+  </section>
+
+  <section>
+    <h2><span class="n">02</span>Giro de 180° y vuelta</h2>
+    <p class="hint">Si al girar el móvil media vuelta marca 180° exactos y al volver marca 0. Para la convergencia hay que girarlo entre ruedas, así que este error cuenta tanto como la deriva.</p>
+    <ol class="steps">
+      <li>Fija a la mesa una <b>regla o escuadra recta</b>. Apoya el <b>canto largo</b> del móvil contra ella, plano.</li>
+      <li><b>Calibrar y cero</b> (3 s quieto).</li>
+      <li>Gíralo media vuelta sobre la mesa y apoya el otro canto largo contra la misma regla. <b>Registrar 180°</b>.</li>
+      <li>Vuelve a la posición inicial. <b>Registrar vuelta</b>. Repite 3 veces.</li>
+    </ol>
+    <div class="row">
+      <button id="btnRotZero" disabled>Calibrar y cero</button>
+      <button id="btnRot180" disabled>Registrar 180°</button>
+      <button id="btnRotBack" disabled>Registrar vuelta</button>
+    </div>
+    <div class="status" id="rotStatus"></div>
+    <div class="res" id="rotRes"></div>
+  </section>
+
+  <section>
+    <h2><span class="n">03</span>Volteo del inclinómetro</h2>
+    <p class="hint">Mide el error de cero del acelerómetro y el ruido. Es lo que usaremos para la caída.</p>
+    <ol class="steps">
+      <li>Móvil <b>de pie</b>, puerto de carga abajo, con un <b>canto lateral</b> apoyado en algo recto y fijo (marco de puerta, escuadra, la barra de la llanta).</li>
+      <li><b>Medir A</b> (3 s quieto).</li>
+      <li>Dale la vuelta para que la pantalla mire al otro lado, apoyando <b>el mismo canto en el mismo sitio</b>. <b>Medir B</b>.</li>
+      <li>Repite el par 3 veces.</li>
+    </ol>
+    <div class="row">
+      <button id="btnFlipA" disabled>Medir A</button>
+      <button id="btnFlipB" disabled>Medir B</button>
+    </div>
+    <div class="status" id="flipStatus"></div>
+    <div class="res" id="flipRes"></div>
+  </section>
+
+  <section>
+    <h2><span class="n">04</span>Veredicto</h2>
+    <p class="hint">Criterio orientativo: la convergencia de fábrica se mueve en décimas de grado por rueda, así que el móvil debe equivocarse bastante menos.</p>
+    <div class="verdict" id="verdict"><div class="mut">Haz las pruebas para ver el resultado.</div></div>
+    <div class="row"><button id="btnCopy">Copiar resultados</button></div>
+    <textarea id="report" readonly aria-label="Resultados en texto"></textarea>
+  </section>
+
+  <footer>Los datos no salen del móvil. Pega los resultados en el chat para valorarlos.</footer>
+</main>
+
+<script>
+(() => {
+'use strict';
+const D2R = Math.PI / 180, R2D = 180 / Math.PI;
+const $ = id => document.getElementById(id);
+const S = {
+  api: '—', started: false,
+  g: [0, 0, 9.81], hasGravity: false,
+  lastGyroT: null, rate: 0, yaw: 0, bias: 0,
+  gyroCount: 0, accCount: 0, gyroHz: 0, accHz: 0,
+  recorders: []
+};
+const R = { drift: null, rot: [], rotZeroT: null, rot180: null, flip: [], flipA: null };
+
+/* ---------- sensores ---------- */
+function onAccel(x, y, z) {
+  if (!isFinite(x) || !isFinite(y) || !isFinite(z)) return;
+  const a = 0.12;
+  S.g = [S.g[0] + a * (x - S.g[0]), S.g[1] + a * (y - S.g[1]), S.g[2] + a * (z - S.g[2])];
+  S.accCount++;
+  for (const r of S.recorders) if (r.kind === 'acc') r.samples.push([x, y, z]);
+}
+function onGyro(wx, wy, wz, t) {
+  if (!isFinite(wx) || !isFinite(wy) || !isFinite(wz)) return;
+  const [gx, gy, gz] = S.g, gn = Math.hypot(gx, gy, gz) || 1;
+  const w = ((wx * gx + wy * gy + wz * gz) / gn) * R2D; // °/s alrededor de la vertical
+  S.gyroCount++;
+  if (S.lastGyroT !== null) {
+    const dt = (t - S.lastGyroT) / 1000;
+    if (dt > 0 && dt < 0.2) {
+      S.rate = w;
+      S.yaw += (w - S.bias) * dt;
+      for (const r of S.recorders) if (r.kind === 'gyro') r.samples.push([w, dt]);
+    }
+  }
+  S.lastGyroT = t;
+}
+function record(kind, ms, statusEl, label) {
+  return new Promise(res => {
+    const rec = { kind, samples: [] };
+    S.recorders.push(rec);
+    const t0 = performance.now();
+    const iv = setInterval(() => {
+      const left = Math.max(0, ms - (performance.now() - t0));
+      if (statusEl) { statusEl.textContent = `${label} ${(left / 1000).toFixed(1)} s`; statusEl.classList.add('live'); }
+      if (left <= 0) {
+        clearInterval(iv);
+        S.recorders = S.recorders.filter(r => r !== rec);
+        if (statusEl) statusEl.classList.remove('live');
+        res(rec.samples);
+      }
+    }, 100);
+  });
+}
+
+async function start() {
+  const st = $('startStatus');
+  try {
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+      const p = await DeviceMotionEvent.requestPermission();
+      if (p !== 'granted') { st.textContent = 'Permiso de movimiento denegado.'; return; }
+    }
+  } catch (e) { /* sigue con lo disponible */ }
+
+  if (!window.isSecureContext) {
+    st.textContent = 'Esta página necesita HTTPS para leer los sensores. Ábrela desde una dirección https://';
+  }
+  let ok = false;
+  if ('Gyroscope' in window && 'Accelerometer' in window) {
+    try {
+      const gyr = new Gyroscope({ frequency: 100 });
+      const acc = new Accelerometer({ frequency: 60 });
+      gyr.addEventListener('reading', () => onGyro(gyr.x, gyr.y, gyr.z, gyr.timestamp));
+      acc.addEventListener('reading', () => onAccel(acc.x, acc.y, acc.z));
+      gyr.addEventListener('error', () => {}); acc.addEventListener('error', () => {});
+      gyr.start(); acc.start();
+      await new Promise(r => setTimeout(r, 1200));
+      if (S.gyroCount > 5 && S.accCount > 5) { ok = true; S.api = 'Generic Sensor API'; }
+      else { try { gyr.stop(); acc.stop(); } catch (e) {} }
+    } catch (e) { /* fallback */ }
+  }
+  if (!ok) {
+    window.addEventListener('devicemotion', e => {
+      const a = e.accelerationIncludingGravity, r = e.rotationRate;
+      if (a) onAccel(a.x, a.y, a.z);
+      if (r && r.alpha !== null) onGyro((r.beta || 0) * D2R, (r.gamma || 0) * D2R, (r.alpha || 0) * D2R, e.timeStamp);
+    });
+    await new Promise(r => setTimeout(r, 1200));
+    if (S.gyroCount > 5 && S.accCount > 5) { ok = true; S.api = 'devicemotion'; }
+  }
+  if (!ok) {
+    st.textContent = window.isSecureContext
+      ? 'No llegan datos del giroscopio o acelerómetro en este navegador. Prueba con Chrome.'
+      : 'Sin HTTPS no hay sensores. Ábrela desde una dirección https://';
+    return;
+  }
+  S.started = true;
+  st.textContent = `Activo · ${S.api}`;
+  ['btnDrift', 'btnRotZero', 'btnFlipA'].forEach(id => $(id).disabled = false);
+  $('btnStart').disabled = true;
+  try { if (navigator.wakeLock) await navigator.wakeLock.request('screen'); } catch (e) {}
+  setInterval(() => { S.gyroHz = S.gyroCount; S.accHz = S.accCount; S.gyroCount = 0; S.accCount = 0; }, 1000);
+  requestAnimationFrame(live);
+}
+
+/* ---------- utilidades ---------- */
+const mean = a => a.reduce((s, v) => s + v, 0) / (a.length || 1);
+const std = a => { const m = mean(a); return Math.sqrt(mean(a.map(v => (v - m) ** 2))); };
+const f = (v, d = 3) => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(d);
+function planeAngle(x, y) { // inclinación del eje largo respecto a la vertical, en el plano de la pantalla
+  let d = Math.atan2(x, y) * R2D;
+  if (d > 90) d -= 180; if (d < -90) d += 180;
+  return d;
+}
+function pose() {
+  const [x, y, z] = S.g, n = Math.hypot(x, y, z) || 1;
+  if (Math.abs(z) / n > 0.97) return 'plano';
+  if (Math.abs(y) / n > 0.9) return 'de pie';
+  return 'inclinado';
+}
+function grade(v, good, ok) { return v <= good ? 'good' : v <= ok ? 'warn' : 'bad'; }
+const LABEL = { good: 'Bien', warn: 'Justo', bad: 'No apto' };
+
+let lastPaint = 0;
+function live(t) {
+  if (t - lastPaint > 100) {
+    lastPaint = t;
+    const [x, y] = S.g;
+    $('lvPose').textContent = pose();
+    $('lvTilt').innerHTML = pose() === 'de pie' ? `${f(planeAngle(x, y), 2)}<small>°</small>` : '—';
+    $('lvYaw').innerHTML = `${f(S.yaw, 2)}<small>°</small>`;
+    $('lvGHz').innerHTML = `${S.gyroHz}<small> Hz</small>`;
+  }
+  requestAnimationFrame(live);
+}
+function setRes(el, rows) {
+  el.innerHTML = rows.map(([k, v, c]) => `<div><span>${k}</span><span class="${c || ''}">${v}</span></div>`).join('');
+}
+
+/* ---------- prueba 1: deriva ---------- */
+$('btnDrift').addEventListener('click', async () => {
+  const st = $('driftStatus'), b = $('btnDrift');
+  if (pose() !== 'plano') { st.textContent = 'Pon el móvil plano, pantalla arriba, y vuelve a pulsar.'; return; }
+  b.disabled = true;
+  const cal = await record('gyro', 10000, st, 'Calibrando, no toques…');
+  const bias = mean(cal.map(s => s[0]));
+  const meas = await record('gyro', 30000, st, 'Midiendo deriva, no toques…');
+  let raw = 0, cor = 0, maxAbs = 0;
+  for (const [w, dt] of meas) { raw += w * dt; cor += (w - bias) * dt; maxAbs = Math.max(maxAbs, Math.abs(cor)); }
+  const noise = std(meas.map(s => s[0]));
+  const d10 = Math.abs(cor) / 3;
+  R.drift = { bias, raw, cor, maxAbs, noise, d10, n: meas.length };
+  const c = grade(d10, 0.03, 0.1);
+  setRes($('driftRes'), [
+    ['Sesgo medido', `${f(bias, 4)} °/s`],
+    ['Deriva 30 s sin corregir', `${f(raw, 3)}°`],
+    ['Deriva 30 s corregida', `${f(cor, 3)}°`],
+    ['Desvío máx. corregido', `${maxAbs.toFixed(3)}°`],
+    ['Equivalente en 10 s', `${d10.toFixed(3)}°`, c],
+    ['Ruido de la señal', `${noise.toFixed(4)} °/s`],
+    ['Muestras', `${meas.length}`]
+  ]);
+  st.textContent = 'Hecho.';
+  b.disabled = false;
+  verdict();
+});
+
+/* ---------- prueba 2: giro 180 ---------- */
+$('btnRotZero').addEventListener('click', async () => {
+  const st = $('rotStatus');
+  if (pose() !== 'plano') { st.textContent = 'Pon el móvil plano contra la regla y vuelve a pulsar.'; return; }
+  ['btnRotZero', 'btnRot180', 'btnRotBack'].forEach(id => $(id).disabled = true);
+  const cal = await record('gyro', 3000, st, 'Calibrando, quieto…');
+  S.bias = mean(cal.map(s => s[0]));
+  S.yaw = 0; R.rotZeroT = performance.now(); R.rot180 = null;
+  st.textContent = 'Cero fijado. Gira media vuelta y apoya el otro canto en la regla.';
+  $('btnRot180').disabled = false; $('btnRotZero').disabled = false;
+});
+$('btnRot180').addEventListener('click', async () => {
+  const st = $('rotStatus');
+  $('btnRot180').disabled = true;
+  await record('gyro', 1000, st, 'Asentando…');
+  R.rot180 = S.yaw;
+  st.textContent = `180°: ${f(S.yaw, 3)}°. Ahora vuelve a la posición inicial.`;
+  $('btnRotBack').disabled = false;
+});
+$('btnRotBack').addEventListener('click', async () => {
+  const st = $('rotStatus');
+  $('btnRotBack').disabled = true;
+  await record('gyro', 1000, st, 'Asentando…');
+  const back = S.yaw, secs = (performance.now() - R.rotZeroT) / 1000;
+  const e180 = Math.abs(Math.abs(R.rot180) - 180), eBack = Math.abs(back);
+  R.rot.push({ r180: R.rot180, back, e180, eBack, secs });
+  const rows = R.rot.map((r, i) => [`Intento ${i + 1} · ${r.secs.toFixed(0)} s`,
+    `180: ${r.e180.toFixed(3)}° · vuelta: ${r.eBack.toFixed(3)}°`, grade(Math.max(r.e180, r.eBack), 0.05, 0.15)]);
+  if (R.rot.length > 1) rows.push(['Media', `180: ${mean(R.rot.map(r => r.e180)).toFixed(3)}° · vuelta: ${mean(R.rot.map(r => r.eBack)).toFixed(3)}°`]);
+  setRes($('rotRes'), rows);
+  st.textContent = 'Registrado. Pulsa "Calibrar y cero" para otro intento.';
+  verdict();
+});
+
+/* ---------- prueba 3: volteo ---------- */
+async function measureTilt(label) {
+  const st = $('flipStatus');
+  const s = await record('acc', 3000, st, label);
+  const ang = s.map(([x, y]) => planeAngle(x, y));
+  const mx = mean(s.map(v => v[0])), my = mean(s.map(v => v[1]));
+  return { a: planeAngle(mx, my), noise: std(ang), n: s.length };
+}
+$('btnFlipA').addEventListener('click', async () => {
+  const st = $('flipStatus');
+  if (pose() !== 'de pie') { st.textContent = 'Pon el móvil de pie, puerto abajo, y vuelve a pulsar.'; return; }
+  $('btnFlipA').disabled = true; $('btnFlipB').disabled = true;
+  R.flipA = await measureTilt('Midiendo A, quieto…');
+  st.textContent = `A: ${f(R.flipA.a, 3)}°. Dale la vuelta (mismo canto, mismo sitio) y mide B.`;
+  $('btnFlipA').disabled = false; $('btnFlipB').disabled = false;
+});
+$('btnFlipB').addEventListener('click', async () => {
+  const st = $('flipStatus');
+  if (pose() !== 'de pie') { st.textContent = 'Pon el móvil de pie, puerto abajo, y vuelve a pulsar.'; return; }
+  $('btnFlipB').disabled = true;
+  const B = await measureTilt('Midiendo B, quieto…');
+  const A = R.flipA;
+  const zero = (A.a + B.a) / 2, tilt = (A.a - B.a) / 2, noise = Math.max(A.noise, B.noise);
+  R.flip.push({ a: A.a, b: B.a, zero, tilt, noise });
+  const rows = R.flip.map((p, i) => [`Par ${i + 1}`, `cero ${f(p.zero, 3)}° · ref ${f(p.tilt, 3)}° · ruido ${p.noise.toFixed(3)}°`]);
+  if (R.flip.length > 1) {
+    const zs = R.flip.map(p => p.zero), ts = R.flip.map(p => p.tilt);
+    rows.push(['Dispersión del cero', `${(Math.max(...zs) - Math.min(...zs)).toFixed(3)}°`, grade(Math.max(...zs) - Math.min(...zs), 0.05, 0.1)]);
+    rows.push(['Dispersión de la referencia', `${(Math.max(...ts) - Math.min(...ts)).toFixed(3)}°`, grade(Math.max(...ts) - Math.min(...ts), 0.05, 0.1)]);
+  }
+  setRes($('flipRes'), rows);
+  st.textContent = 'Par registrado. Mide A otra vez para repetir.';
+  R.flipA = null;
+  verdict();
+});
+
+/* ---------- veredicto ---------- */
+function verdict() {
+  const lines = [];
+  let gyroOk = null, camberOk = null;
+  if (R.drift) {
+    const c = grade(R.drift.d10, 0.03, 0.1);
+    lines.push(['Deriva del giroscopio (10 s)', `${R.drift.d10.toFixed(3)}°`, c]);
+    gyroOk = c;
+  }
+  if (R.rot.length) {
+    const e = Math.max(mean(R.rot.map(r => r.e180)), mean(R.rot.map(r => r.eBack)));
+    const c = grade(e, 0.05, 0.15);
+    lines.push(['Giro 180° (error medio)', `${e.toFixed(3)}°`, c]);
+    gyroOk = gyroOk === null ? c : (gyroOk === 'bad' || c === 'bad') ? 'bad' : (gyroOk === 'warn' || c === 'warn') ? 'warn' : 'good';
+  }
+  if (R.flip.length) {
+    const zs = R.flip.map(p => p.zero);
+    const spread = R.flip.length > 1 ? Math.max(...zs) - Math.min(...zs) : null;
+    const noise = Math.max(...R.flip.map(p => p.noise));
+    const cN = grade(noise, 0.05, 0.12);
+    lines.push(['Ruido del inclinómetro', `${noise.toFixed(3)}°`, cN]);
+    if (spread !== null) {
+      const cS = grade(spread, 0.05, 0.1);
+      lines.push(['Repetibilidad del cero', `${spread.toFixed(3)}°`, cS]);
+      camberOk = (cN === 'bad' || cS === 'bad') ? 'bad' : (cN === 'warn' || cS === 'warn') ? 'warn' : 'good';
+    }
+  }
+  const html = [];
+  for (const [k, v, c] of lines) html.push(`<div class="line"><span>${k}</span><span class="${c}"><span class="mono">${v}</span> <span class="chip">${LABEL[c]}</span></span></div>`);
+  if (gyroOk && R.drift && R.rot.length >= 2) {
+    const msg = { good: 'Convergencia por giroscopio: merece la pena probarla', warn: 'Convergencia por giroscopio: dudosa, validar con taller', bad: 'Convergencia por giroscopio: descartada, ir a cámara o hilos' }[gyroOk];
+    html.push(`<div class="line"><b class="${gyroOk}">${msg}</b></div>`);
+  }
+  if (camberOk && R.flip.length >= 2) {
+    const msg = { good: 'Caída con este móvil: viable con volteo', warn: 'Caída con este móvil: posible, promediando más', bad: 'Caída con este móvil: demasiado ruido' }[camberOk];
+    html.push(`<div class="line"><b class="${camberOk}">${msg}</b></div>`);
+  }
+  $('verdict').innerHTML = html.length ? html.join('') : '<div class="mut">Haz las pruebas para ver el resultado.</div>';
+  report();
+}
+function report() {
+  const L = [];
+  L.push('BANCO DE SENSORES · Mecánica de Galpón');
+  L.push(`Fecha: ${new Date().toLocaleString('es-ES')}`);
+  L.push(`Navegador: ${navigator.userAgent}`);
+  L.push(`API: ${S.api} · giroscopio ~${S.gyroHz} Hz · acelerómetro ~${S.accHz} Hz`);
+  if (R.drift) {
+    const d = R.drift;
+    L.push(`[1] Deriva: sesgo ${f(d.bias, 4)} °/s · 30 s sin corregir ${f(d.raw)}° · corregida ${f(d.cor)}° · máx ${d.maxAbs.toFixed(3)}° · eq. 10 s ${d.d10.toFixed(3)}° · ruido ${d.noise.toFixed(4)} °/s · n=${d.n}`);
+  }
+  R.rot.forEach((r, i) => L.push(`[2] Intento ${i + 1}: 180 leído ${f(r.r180)}° (err ${r.e180.toFixed(3)}°) · vuelta ${f(r.back)}° · ${r.secs.toFixed(0)} s`));
+  R.flip.forEach((p, i) => L.push(`[3] Par ${i + 1}: A ${f(p.a)}° · B ${f(p.b)}° · cero ${f(p.zero)}° · ref ${f(p.tilt)}° · ruido ${p.noise.toFixed(3)}°`));
+  $('report').value = L.join('\n');
+}
+$('btnCopy').addEventListener('click', async () => {
+  report();
+  const t = $('report');
+  try { await navigator.clipboard.writeText(t.value); $('btnCopy').textContent = 'Copiado'; }
+  catch (e) { t.focus(); t.select(); $('btnCopy').textContent = 'Selecciona y copia'; }
+  setTimeout(() => $('btnCopy').textContent = 'Copiar resultados', 2000);
+});
+$('btnStart').addEventListener('click', start);
+report();
+})();
+</script>
+</body>
+</html>
