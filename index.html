@@ -185,12 +185,21 @@ function record(kind, ms, statusEl, label) {
 
 async function start() {
   const st = $('startStatus');
+  const diag = [];
+  diag.push(/GitHub|; wv\)|MiuiBrowser|XiaoMi|SamsungBrowser|FBAN|Instagram/i.test(navigator.userAgent)
+    ? 'Navegador: no es Chrome (o es un navegador interno de otra app)' : 'Navegador: ' + (/Chrome\/\d+/.exec(navigator.userAgent) || ['desconocido'])[0]);
+  diag.push('HTTPS: ' + (window.isSecureContext ? 'sí' : 'no'));
   try {
     if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
       const p = await DeviceMotionEvent.requestPermission();
-      if (p !== 'granted') { st.textContent = 'Permiso de movimiento denegado.'; return; }
+      diag.push('Permiso de movimiento pedido: ' + p);
     }
-  } catch (e) { /* sigue con lo disponible */ }
+  } catch (e) { diag.push('Permiso de movimiento: error al pedirlo'); }
+  for (const name of ['accelerometer', 'gyroscope']) {
+    try { const q = await navigator.permissions.query({ name }); diag.push(`Permiso ${name}: ${q.state}`); }
+    catch (e) { /* el navegador no expone este permiso */ }
+  }
+  st.textContent = 'Probando sensores…';
 
   if (!window.isSecureContext) {
     st.textContent = 'Esta página necesita HTTPS para leer los sensores. Ábrela desde una dirección https://';
@@ -218,10 +227,11 @@ async function start() {
     await new Promise(r => setTimeout(r, 1200));
     if (S.gyroCount > 5 && S.accCount > 5) { ok = true; S.api = 'devicemotion'; }
   }
+  diag.push(`Datos recibidos: giroscopio ${S.gyroCount}, acelerómetro ${S.accCount}`);
   if (!ok) {
-    st.textContent = window.isSecureContext
-      ? 'No llegan datos del giroscopio o acelerómetro en este navegador. Prueba con Chrome.'
-      : 'Sin HTTPS no hay sensores. Ábrela desde una dirección https://';
+    st.innerHTML = 'No llegan datos de los sensores. Ábrela en Chrome y revisa en Chrome → Configuración de sitios → Sensores de movimiento que esté permitido.<br>'
+      + diag.map(d => d.replace(/[<>&]/g, '')).join('<br>');
+    $('report').value = 'DIAGNÓSTICO\n' + diag.join('\n') + '\n' + navigator.userAgent;
     return;
   }
   S.started = true;
