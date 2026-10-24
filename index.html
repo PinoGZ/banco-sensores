@@ -59,7 +59,7 @@ footer{color:var(--muted);font-size:.8rem}
 
   <section>
     <h2><span class="n">00</span>Activar</h2>
-    <p class="hint">Quita la funda. Pulsa una vez; la pantalla se mantendrá encendida mientras pruebas.</p>
+    <p class="hint">Si la cámara sobresale, usa <b>funda rígida</b> o pega el móvil a una <b>placa plana</b>. Pulsa una vez; la pantalla se mantendrá encendida. Cada aviso suena y vibra: <b>quita el modo silencio</b> (el iPhone no vibra desde la web).</p>
     <div class="row"><button id="btnStart" class="primary">Activar sensores</button></div>
     <div class="status" id="startStatus">Sensores apagados.</div>
     <div class="grid">
@@ -102,6 +102,23 @@ footer{color:var(--muted);font-size:.8rem}
   </section>
 
   <section>
+    <h2><span class="n">02b</span>Vuelta completa en un rincón</h2>
+    <p class="hint">Versión fácil de la 02. No depende de que los cantos del móvil sean paralelos: el móvil sale de un rincón y vuelve al mismo rincón, así que ha girado <b>360° exactos</b>.</p>
+    <ol class="steps">
+      <li>Haz un <b>rincón</b>: una escuadra o dos listones fijos a la mesa, o la esquina de una caja pesada.</li>
+      <li>Mete el móvil (o su placa) en el rincón, <b>plano, pantalla arriba</b>, con <b>dos cantos tocando</b> las dos paredes. Marca con cinta qué esquina va al fondo.</li>
+      <li><b>Calibrar y cero</b> (3 s quieto).</li>
+      <li>Sácalo un poco, dale <b>una vuelta entera arrastrándolo</b> sobre la mesa, en el sentido que quieras, y vuelve a encajarlo en el rincón igual que al principio. <b>Registrar 360°</b>. Repite 3 veces.</li>
+    </ol>
+    <div class="row">
+      <button id="btnFullZero" disabled>Calibrar y cero</button>
+      <button id="btnFull360" disabled>Registrar 360°</button>
+    </div>
+    <div class="status" id="fullStatus"></div>
+    <div class="res" id="fullRes"></div>
+  </section>
+
+  <section>
     <h2><span class="n">03</span>Volteo del inclinómetro</h2>
     <p class="hint">Mide el error de cero del acelerómetro y el ruido. Es lo que usaremos para la caída.</p>
     <ol class="steps">
@@ -116,6 +133,22 @@ footer{color:var(--muted);font-size:.8rem}
     </div>
     <div class="status" id="flipStatus"></div>
     <div class="res" id="flipRes"></div>
+  </section>
+
+  <section>
+    <h2><span class="n">03b</span>Repetibilidad del apoyo</h2>
+    <p class="hint">Hazla <b>antes</b> de la 03. Sin volteo: pones el móvil siempre igual y mira si mide lo mismo. Si aquí sale mal, el problema es el apoyo, no el sensor.</p>
+    <ol class="steps">
+      <li>Mismo montaje que la 03: marca de cinta y libro, <b>pantalla hacia ti</b>.</li>
+      <li>Pulsa <b>Medir</b>, coloca el móvil en 5 s y <b>suéltalo</b>. Suena al empezar y al terminar.</li>
+      <li><b>Quítalo de la mesa</b> y repite. Haz al menos 5 medidas.</li>
+    </ol>
+    <div class="row">
+      <button id="btnRep" disabled>Medir</button>
+      <button id="btnRepReset" disabled>Borrar</button>
+    </div>
+    <div class="status" id="repStatus"></div>
+    <div class="res" id="repRes"></div>
   </section>
 
   <section>
@@ -141,7 +174,7 @@ const S = {
   gyroCount: 0, accCount: 0, gyroHz: 0, accHz: 0,
   recorders: []
 };
-const R = { drift: null, rot: [], rotZeroT: null, rot180: null, rotWatch: false, rotSign: 1, rotMinFlat: 1, flip: [], flipA: null };
+const R = { drift: null, full: [], fullArmed: false, rep: [], rot: [], rotZeroT: null, rot180: null, rotWatch: false, rotSign: 1, rotMinFlat: 1, flip: [], flipA: null };
 
 /* ---------- sensores ---------- */
 function onAccel(x, y, z) {
@@ -190,6 +223,7 @@ function record(kind, ms, statusEl, label) {
 
 async function start() {
   const st = $('startStatus');
+  unlockAudio();
   const diag = [];
   diag.push(/GitHub|; wv\)|MiuiBrowser|XiaoMi|SamsungBrowser|FBAN|Instagram/i.test(navigator.userAgent)
     ? 'Navegador: no es Chrome (o es un navegador interno de otra app)' : 'Navegador: ' + (/Chrome\/\d+/.exec(navigator.userAgent) || ['desconocido'])[0]);
@@ -241,7 +275,7 @@ async function start() {
   }
   S.started = true;
   st.textContent = `Activo · ${S.api}`;
-  ['btnDrift', 'btnRotZero', 'btnFlipA'].forEach(id => $(id).disabled = false);
+  ['btnDrift', 'btnRotZero', 'btnFlipA', 'btnFullZero', 'btnRep', 'btnRepReset'].forEach(id => $(id).disabled = false);
   $('btnStart').disabled = true;
   try { if (navigator.wakeLock) await navigator.wakeLock.request('screen'); } catch (e) {}
   setInterval(() => { S.gyroHz = S.gyroCount; S.accHz = S.accCount; S.gyroCount = 0; S.accCount = 0; }, 1000);
@@ -275,7 +309,8 @@ function live(t) {
     $('lvTilt').innerHTML = pose() === 'de pie' ? `${f(planeAngle(x, y), 2)}<small>°</small>` : '—';
     $('lvYaw').innerHTML = `${f(S.yaw, 2)}<small>°</small>`;
     $('lvGHz').innerHTML = `${S.gyroHz}<small> Hz</small>`;
-    $('rotLive').textContent = R.rotWatch ? `Giro ahora: ${f(S.yaw, 1)}°` : '';
+    $('rotLive').textContent = R.rotWatch && !R.fullArmed ? `Giro ahora: ${f(S.yaw, 1)}°` : '';
+    if (R.fullArmed) $('fullStatus').textContent = `Giro ahora: ${f(S.yaw, 1)}°`;
   }
   requestAnimationFrame(live);
 }
@@ -312,7 +347,31 @@ $('btnDrift').addEventListener('click', async () => {
 });
 
 /* ---------- prueba 2: giro 180 ---------- */
-const buzz = p => { try { navigator.vibrate && navigator.vibrate(p); } catch (e) {} };
+let AC = null;
+function unlockAudio() { // el iPhone no vibra desde la web: cada aviso también suena
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = 'playback';
+    AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+    if (AC.state === 'suspended') AC.resume();
+    const o = AC.createOscillator(), g = AC.createGain(); g.gain.value = 0;
+    o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + 0.01);
+  } catch (e) { AC = null; }
+}
+function beep(p) { // mismo patrón que la vibración: [on, off, on, ...] en ms
+  if (!AC) return;
+  const pat = Array.isArray(p) ? p : [p];
+  let t = AC.currentTime + 0.02;
+  pat.forEach((ms, i) => {
+    if (i % 2 === 0) {
+      const o = AC.createOscillator(), g = AC.createGain();
+      o.frequency.value = pat.length > 1 && ms >= 200 ? 440 : 1200;
+      g.gain.setValueAtTime(0.25, t); g.gain.setValueAtTime(0, t + ms / 1000);
+      o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t + ms / 1000 + 0.02);
+    }
+    t += ms / 1000;
+  });
+}
+const buzz = p => { try { navigator.vibrate && navigator.vibrate(p); } catch (e) {} try { beep(p); } catch (e) {} };
 const wait = ms => new Promise(r => setTimeout(r, ms));
 function rotFlippedMsg() {
   return 'Lo has levantado o volteado (min. plano ' + R.rotMinFlat.toFixed(2) + '). Repite: arrástralo sobre la mesa, pantalla arriba.';
@@ -323,6 +382,7 @@ $('btnRotZero').addEventListener('click', async () => {
   ['btnRotZero', 'btnRot180', 'btnRotBack'].forEach(id => $(id).disabled = true);
   const cal = await record('gyro', 3000, st, 'Calibrando, quieto…');
   S.bias = mean(cal.map(s => s[0]));
+  R.fullArmed = false;
   S.yaw = 0; R.rotZeroT = performance.now(); R.rot180 = null;
   R.rotSign = Math.sign(S.g[2]) || 1; R.rotMinFlat = 1; R.rotWatch = true;
   st.textContent = 'Cero fijado. Arrastra el móvil media vuelta sin levantarlo y apoya el otro canto en la regla.';
@@ -363,8 +423,8 @@ $('btnRotBack').addEventListener('click', async () => {
 
 /* ---------- prueba 3: volteo (manos libres) ---------- */
 const NOISE_MAX = 0.15;
-async function measureTilt(name) {
-  const st = $('flipStatus');
+async function measureTilt(name, statusEl) {
+  const st = statusEl || $('flipStatus');
   buzz(150);
   for (let i = 5; i > 0; i--) { st.textContent = `Coloca el móvil (${name}) y suéltalo… ${i}`; st.classList.add('live'); await wait(1000); }
   if (pose() !== 'de pie') { st.classList.remove('live'); buzz([300, 100, 300]); return { err: 'No está de pie sobre el canto inferior. Vuelve a pulsar.' }; }
@@ -408,6 +468,62 @@ $('btnFlipB').addEventListener('click', async () => {
   verdict();
 });
 
+/* ---------- prueba 2b: vuelta completa en rincón ---------- */
+$('btnFullZero').addEventListener('click', async () => {
+  const st = $('fullStatus');
+  if (pose() !== 'plano') { st.textContent = 'Pon el móvil plano, pantalla arriba, encajado en el rincón y vuelve a pulsar.'; return; }
+  ['btnFullZero', 'btnFull360'].forEach(id => $(id).disabled = true);
+  R.fullArmed = false;
+  const cal = await record('gyro', 3000, st, 'Calibrando, quieto…');
+  S.bias = mean(cal.map(s => s[0]));
+  S.yaw = 0; R.rotZeroT = performance.now();
+  R.rotSign = Math.sign(S.g[2]) || 1; R.rotMinFlat = 1; R.rotWatch = true; R.fullArmed = true;
+  buzz(80);
+  $('btnFull360').disabled = false; $('btnFullZero').disabled = false;
+});
+$('btnFull360').addEventListener('click', async () => {
+  const st = $('fullStatus');
+  $('btnFull360').disabled = true;
+  R.fullArmed = false;
+  await record('gyro', 1000, st, 'Asentando…');
+  R.rotWatch = false;
+  if (R.rotMinFlat < 0.85) { st.textContent = rotFlippedMsg(); buzz([200, 100, 200]); return; }
+  const yaw = S.yaw, secs = (performance.now() - R.rotZeroT) / 1000;
+  if (Math.abs(Math.abs(yaw) - 360) > 30) {
+    st.textContent = `Marca ${f(yaw, 1)}°, no una vuelta entera. Pulsa Calibrar y cero y repite.`;
+    buzz([200, 100, 200]); return;
+  }
+  const e = Math.abs(Math.abs(yaw) - 360);
+  R.full.push({ yaw, e, secs });
+  const rows = R.full.map((r, i) => [`Intento ${i + 1} · ${r.secs.toFixed(0)} s`, `${f(r.yaw, 3)}° · error ${r.e.toFixed(3)}°`, grade(r.e, 0.1, 0.3)]);
+  if (R.full.length > 1) rows.push(['Media', `error ${mean(R.full.map(r => r.e)).toFixed(3)}°`]);
+  setRes($('fullRes'), rows);
+  st.textContent = 'Registrado. Pulsa "Calibrar y cero" para otro intento.';
+  buzz([80, 80, 80]);
+  verdict();
+});
+
+/* ---------- prueba 3b: repetibilidad del apoyo ---------- */
+$('btnRep').addEventListener('click', async () => {
+  const st = $('repStatus');
+  ['btnRep', 'btnRepReset', 'btnFlipA', 'btnFlipB'].forEach(id => $(id).disabled = true);
+  const M = await measureTilt('pantalla hacia ti', st);
+  ['btnRep', 'btnRepReset', 'btnFlipA'].forEach(id => $(id).disabled = false);
+  if (R.flipA) $('btnFlipB').disabled = false;
+  if (M.err) { st.textContent = M.err; return; }
+  R.rep.push(M);
+  const as = R.rep.map(m => m.a);
+  const rows = R.rep.map((m, i) => [`Medida ${i + 1}`, `${f(m.a, 3)}° · ruido ${m.noise.toFixed(3)}°`]);
+  if (R.rep.length > 1) {
+    const sp = Math.max(...as) - Math.min(...as);
+    rows.push(['Dispersión', `${sp.toFixed(3)}°`, grade(sp, 0.05, 0.1)]);
+  }
+  setRes($('repRes'), rows);
+  st.textContent = `Medida ${R.rep.length} registrada. Quita el móvil y vuelve a pulsar Medir.`;
+  verdict();
+});
+$('btnRepReset').addEventListener('click', () => { R.rep = []; setRes($('repRes'), []); $('repStatus').textContent = 'Borrado.'; verdict(); });
+
 /* ---------- veredicto ---------- */
 function verdict() {
   const lines = [];
@@ -422,6 +538,14 @@ function verdict() {
     const c = grade(e, 0.05, 0.15);
     lines.push(['Giro 180° (error medio)', `${e.toFixed(3)}°`, c]);
     gyroOk = gyroOk === null ? c : (gyroOk === 'bad' || c === 'bad') ? 'bad' : (gyroOk === 'warn' || c === 'warn') ? 'warn' : 'good';
+  }
+  if (R.full.length) {
+    const e = mean(R.full.map(r => r.e));
+    lines.push(['Vuelta completa 360° (error medio)', `${e.toFixed(3)}°`, grade(e, 0.1, 0.3)]);
+  }
+  if (R.rep.length > 1) {
+    const as = R.rep.map(m => m.a), sp = Math.max(...as) - Math.min(...as);
+    lines.push(['Repetibilidad del apoyo', `${sp.toFixed(3)}°`, grade(sp, 0.05, 0.1)]);
   }
   if (R.flip.length) {
     const zs = R.flip.map(p => p.zero);
@@ -459,6 +583,8 @@ function report() {
     L.push(`[1] Deriva: sesgo ${f(d.bias, 4)} °/s · 30 s sin corregir ${f(d.raw)}° · corregida ${f(d.cor)}° · máx ${d.maxAbs.toFixed(3)}° · eq. 10 s ${d.d10.toFixed(3)}° · ruido ${d.noise.toFixed(4)} °/s · n=${d.n}`);
   }
   R.rot.forEach((r, i) => L.push(`[2] Intento ${i + 1}: 180 leído ${f(r.r180)}° (err ${r.e180.toFixed(3)}°) · vuelta ${f(r.back)}° · ${r.secs.toFixed(0)} s`));
+  R.full.forEach((r, i) => L.push(`[2b] Intento ${i + 1}: 360 leído ${f(r.yaw)}° (err ${r.e.toFixed(3)}°) · ${r.secs.toFixed(0)} s`));
+  R.rep.forEach((m, i) => L.push(`[3b] Medida ${i + 1}: ${f(m.a)}° · ruido ${m.noise.toFixed(3)}°`));
   R.flip.forEach((p, i) => L.push(`[3] Par ${i + 1}: A ${f(p.a)}° · B ${f(p.b)}° · cero ${f(p.zero)}° · ref ${f(p.tilt)}° · ruido ${p.noise.toFixed(3)}°`));
   $('report').value = L.join('\n');
 }
